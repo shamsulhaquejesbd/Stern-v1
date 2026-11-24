@@ -3,6 +3,8 @@ import { useERP } from '../../context/ERPContext';
 import { calculateEmployeeIndividualOvertime } from '../../types/overtime';
 import { OVERTIME_REPORT_ACTION_MAP } from '../../types/pagePermissions';
 import * as XLSX from 'xlsx';
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas-pro';
 import { 
   FileSpreadsheet, 
   Download, 
@@ -17,6 +19,7 @@ import {
   Clock,
   Printer,
   ChevronDown,
+  Loader2,
   ShieldAlert
 } from 'lucide-react';
 
@@ -201,7 +204,12 @@ export const OvertimeReportsTab: React.FC = () => {
   const [genderFilter, setGenderFilter] = useState('all');
   const [monthFilter, setMonthFilter] = useState(() => new Date().toISOString().slice(0, 7));
   const [employeeFilter, setEmployeeFilter] = useState('all');
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const [pdfError, setPdfError] = useState<string | null>(null);
+  const deptBillRef = useRef<HTMLDivElement>(null);
+  const genericReportRef = useRef<HTMLDivElement>(null);
   const hasUserChangedMonthRef = useRef(false);
+  const hasAutoDefaultedDeptRef = useRef(false);
 
   useEffect(() => {
     if (!isEmpTypeDropdownOpen) return;
@@ -331,6 +339,16 @@ export const OvertimeReportsTab: React.FC = () => {
       )
     );
   }, [departments, activeMasterDepartments, fieldForceReps]);
+
+  // Select the first available department by default when opening Reports & Export
+  useEffect(() => {
+    if (hasAutoDefaultedDeptRef.current) return;
+    if (availableDepartments.length === 0) return;
+    hasAutoDefaultedDeptRef.current = true;
+    if (!departmentFilter || departmentFilter === 'all') {
+      setDepartmentFilter(availableDepartments[0]);
+    }
+  }, [availableDepartments, departmentFilter]);
 
   useEffect(() => {
     if (
@@ -1003,6 +1021,278 @@ export const OvertimeReportsTab: React.FC = () => {
     setTimeout(cleanup, 1500);
   };
 
+  const handleDownloadPdf = async () => {
+    if (!canExport || !activeReportDef || isExportingPdf) return;
+    const isDeptBill = effectiveActiveReport === 2;
+    const targetEl = isDeptBill ? deptBillRef.current : genericReportRef.current;
+    if (!targetEl) return;
+
+    setIsExportingPdf(true);
+    setPdfError(null);
+
+    const applyCompactPdfStyles = (rootEl: HTMLElement) => {
+      rootEl.style.border = 'none';
+      rootEl.style.borderRadius = '0';
+      rootEl.style.boxShadow = 'none';
+      rootEl.style.margin = '0';
+      rootEl.style.backgroundColor = '#ffffff';
+      rootEl.style.maxWidth = 'none';
+
+      const styleTag = rootEl.ownerDocument.createElement('style');
+      if (isDeptBill) {
+        rootEl.style.padding = '8px 10px';
+        rootEl.style.width = 'max-content';
+        styleTag.textContent = `
+          [data-ot-pdf-root="true"] table {
+            width: auto !important;
+            border-collapse: collapse !important;
+            font-size: 9.5px !important;
+          }
+          [data-ot-pdf-root="true"] th,
+          [data-ot-pdf-root="true"] td {
+            padding: 2.5px 3px !important;
+            line-height: 1.15 !important;
+          }
+          [data-ot-pdf-root="true"] [data-ot-day-col="true"] {
+            min-width: 17px !important;
+            padding-left: 1.5px !important;
+            padding-right: 1.5px !important;
+          }
+          [data-ot-pdf-root="true"] [data-ot-sig-col="true"] {
+            min-width: 54px !important;
+          }
+          [data-ot-pdf-root="true"] [data-ot-mob-col="true"] {
+            min-width: 66px !important;
+          }
+          [data-ot-pdf-root="true"] [data-ot-footer="true"] > div:last-child {
+            margin-top: 28px !important;
+            margin-bottom: 4px !important;
+          }
+        `;
+      } else {
+        rootEl.style.padding = '12px 14px';
+        rootEl.style.width = 'max-content';
+        styleTag.textContent = `
+          [data-ot-pdf-root="true"] table {
+            width: 100% !important;
+            border-collapse: collapse !important;
+            font-size: 11px !important;
+          }
+          [data-ot-pdf-root="true"] th,
+          [data-ot-pdf-root="true"] td {
+            padding: 6px 10px !important;
+            border-bottom: 1px solid #e2e8f0 !important;
+          }
+        `;
+      }
+      rootEl.setAttribute('data-ot-pdf-root', 'true');
+      rootEl.prepend(styleTag);
+
+      const wrapEl = rootEl.querySelector('[data-ot-table-wrap="true"]') as HTMLElement | null;
+      if (wrapEl) {
+        wrapEl.style.overflow = 'visible';
+        wrapEl.style.width = 'max-content';
+      }
+
+      if (isDeptBill) {
+        const allCells = rootEl.querySelectorAll('th, td');
+        allCells.forEach((cell) => {
+          const el = cell as HTMLElement;
+          if (el.className.includes('min-w-[20px]')) {
+            el.setAttribute('data-ot-day-col', 'true');
+          } else if (el.className.includes('min-w-[68px]')) {
+            el.setAttribute('data-ot-sig-col', 'true');
+          } else if (el.className.includes('min-w-[82px]')) {
+            el.setAttribute('data-ot-mob-col', 'true');
+          }
+        });
+      }
+
+      const tableEl = rootEl.querySelector('table') as HTMLElement | null;
+      const minW = isDeptBill ? 1200 : 1080;
+      const fullWidth = tableEl ? Math.max(minW, Math.ceil(tableEl.scrollWidth + 28)) : 1320;
+      rootEl.style.width = `${fullWidth}px`;
+      return fullWidth;
+    };
+
+    let measureHost: HTMLDivElement | null = null;
+
+    try {
+      if (document.fonts?.ready) {
+        await document.fonts.ready;
+      }
+
+      const pdf = new jsPDF({
+        orientation: 'landscape',
+        unit: 'mm',
+        format: 'a4',
+        compress: true,
+      });
+
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const marginX = 5;
+      const marginY = 5;
+      const maxW = pageWidth - marginX * 2;
+      const maxH = pageHeight - marginY * 2;
+
+      measureHost = document.createElement('div');
+      measureHost.style.position = 'fixed';
+      measureHost.style.left = '-100000px';
+      measureHost.style.top = '0';
+      measureHost.style.width = '2400px';
+      measureHost.style.visibility = 'hidden';
+      measureHost.style.pointerEvents = 'none';
+      measureHost.style.zIndex = '-1';
+
+      const measureEl = targetEl.cloneNode(true) as HTMLElement;
+      measureHost.appendChild(measureEl);
+      document.body.appendChild(measureHost);
+
+      const fullTableWidth = applyCompactPdfStyles(measureEl);
+      const maxPageHeightPx = Math.max(400, Math.floor(fullTableWidth * (maxH / maxW)) - 14);
+
+      const totalSheetHeight = measureEl.getBoundingClientRect().height;
+      const theadEl = measureEl.querySelector('thead') as HTMLElement | null;
+      const totalRowEl = measureEl.querySelector('[data-ot-row="total"]') as HTMLElement | null;
+      const footerEl = measureEl.querySelector('[data-ot-footer="true"]') as HTMLElement | null;
+      const workerRowEls = Array.from(measureEl.querySelectorAll('[data-ot-row="data"]')) as HTMLElement[];
+
+      const theadHeight = theadEl ? theadEl.getBoundingClientRect().height : 44;
+      const totalRowHeight = totalRowEl ? totalRowEl.getBoundingClientRect().height : 0;
+      const footerHeight = footerEl ? footerEl.getBoundingClientRect().height + 10 : 0;
+      const rowHeights = workerRowEls.map((tr) => tr.getBoundingClientRect().height);
+      const allRowsHeight = rowHeights.reduce((sum, h) => sum + h, 0);
+      const titleAndPaddingHeight = Math.max(
+        44,
+        totalSheetHeight - theadHeight - allRowsHeight - totalRowHeight - footerHeight
+      );
+
+      document.body.removeChild(measureHost);
+      measureHost = null;
+
+      const baseChromeHeight = titleAndPaddingHeight + theadHeight + 8;
+      const footerChromeHeight = totalRowHeight + footerHeight;
+
+      interface PdfPageSlice {
+        start: number;
+        end: number;
+        includeFooter: boolean;
+      }
+
+      const pages: PdfPageSlice[] = [];
+      if (rowHeights.length === 0) {
+        pages.push({ start: 0, end: 0, includeFooter: true });
+      } else {
+        let startIdx = 0;
+        while (startIdx < rowHeights.length) {
+          let usedHeight = baseChromeHeight;
+          let endIdx = startIdx;
+          while (endIdx < rowHeights.length) {
+            const nextH = rowHeights[endIdx];
+            if (endIdx > startIdx && usedHeight + nextH > maxPageHeightPx) {
+              break;
+            }
+            usedHeight += nextH;
+            endIdx++;
+          }
+
+          const isFinalBatch = endIdx === rowHeights.length;
+          if (!isFinalBatch) {
+            pages.push({ start: startIdx, end: endIdx, includeFooter: false });
+            startIdx = endIdx;
+          } else {
+            if (usedHeight + footerChromeHeight <= maxPageHeightPx || endIdx - startIdx <= 1) {
+              pages.push({ start: startIdx, end: endIdx, includeFooter: true });
+            } else {
+              const moveRows = Math.min(4, Math.max(1, endIdx - startIdx - 1));
+              const splitIdx = endIdx - moveRows;
+              pages.push({ start: startIdx, end: splitIdx, includeFooter: false });
+              pages.push({ start: splitIdx, end: endIdx, includeFooter: true });
+            }
+            break;
+          }
+        }
+      }
+
+      const totalPages = pages.length;
+
+      for (let pageIdx = 0; pageIdx < totalPages; pageIdx++) {
+        const slice = pages[pageIdx];
+
+        const canvas = await html2canvas(targetEl, {
+          scale: 2.5,
+          useCORS: true,
+          allowTaint: true,
+          backgroundColor: '#ffffff',
+          logging: false,
+          windowWidth: 2400,
+          windowHeight: 1600,
+          onclone: (_clonedDoc, clonedEl) => {
+            const dataRows = Array.from(clonedEl.querySelectorAll('[data-ot-row="data"]')) as HTMLElement[];
+            dataRows.forEach((tr, idx) => {
+              if (idx < slice.start || idx >= slice.end) {
+                tr.style.display = 'none';
+              }
+            });
+
+            const totalRow = clonedEl.querySelector('[data-ot-row="total"]') as HTMLElement | null;
+            if (totalRow && !slice.includeFooter) {
+              totalRow.style.display = 'none';
+            }
+
+            const clonedFooterEl = clonedEl.querySelector('[data-ot-footer="true"]') as HTMLElement | null;
+            if (clonedFooterEl && !slice.includeFooter) {
+              clonedFooterEl.style.display = 'none';
+            }
+
+            const pageLabelEl = clonedEl.querySelector('[data-ot-page-label="true"]') as HTMLElement | null;
+            if (pageLabelEl) {
+              if (totalPages > 1) {
+                pageLabelEl.textContent = `Page ${pageIdx + 1} of ${totalPages}`;
+                pageLabelEl.classList.remove('hidden');
+                pageLabelEl.style.display = 'block';
+              } else {
+                pageLabelEl.style.display = 'none';
+              }
+            }
+
+            applyCompactPdfStyles(clonedEl);
+            clonedEl.style.width = `${fullTableWidth}px`;
+          },
+        });
+
+        if (pageIdx > 0) {
+          pdf.addPage('a4', 'landscape');
+        }
+
+        const aspect = canvas.width / canvas.height;
+        let renderW = maxW;
+        let renderH = renderW / aspect;
+        if (renderH > maxH) {
+          renderH = maxH;
+          renderW = renderH * aspect;
+        }
+        const offsetX = (pageWidth - renderW) / 2;
+        const offsetY = marginY;
+        const imgData = canvas.toDataURL('image/png', 1.0);
+        pdf.addImage(imgData, 'PNG', offsetX, offsetY, renderW, renderH, undefined, 'FAST');
+      }
+
+      const baseFileName = isDeptBill
+        ? 'Daily_Overtime_Bill_Factory'
+        : activeReportDef.name.replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+      pdf.save(`${baseFileName}_${monthFilter || 'all'}_Landscape.pdf`);
+    } catch (err: any) {
+      setPdfError(err?.message || 'Failed to generate Landscape PDF. Please try again.');
+    } finally {
+      if (measureHost && measureHost.parentNode) {
+        measureHost.parentNode.removeChild(measureHost);
+      }
+      setIsExportingPdf(false);
+    }
+  };
+
   // Generate Report 1: Employee-wise (Final Approved OT requests only)
   const generateEmployeeReport = () => {
     const grouped: { [empId: string]: { code: string; name: string; dept: string; hours: number; amount: number; count: number } } = {};
@@ -1241,7 +1531,7 @@ export const OvertimeReportsTab: React.FC = () => {
         </div>
 
         {canExport && (
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {effectiveActiveReport === 2 && (
               <button
                 type="button"
@@ -1253,6 +1543,20 @@ export const OvertimeReportsTab: React.FC = () => {
               </button>
             )}
             <button
+              type="button"
+              onClick={handleDownloadPdf}
+              disabled={isExportingPdf}
+              title="Download A4 Landscape PDF"
+              className="flex items-center gap-2 bg-rose-600 hover:bg-rose-700 disabled:opacity-60 text-white px-4 py-2.5 rounded-lg text-xs font-semibold shadow-sm transition-colors"
+            >
+              {isExportingPdf ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <FileText className="w-4 h-4" />
+              )}
+              <span>{isExportingPdf ? 'Generating PDF...' : 'Download PDF (Landscape)'}</span>
+            </button>
+            <button
               onClick={() => exportToExcel(currentData, activeReportDef.name.replace(/\s+/g, '_'))}
               className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-lg text-xs font-semibold shadow-sm transition-colors"
             >
@@ -1262,6 +1566,19 @@ export const OvertimeReportsTab: React.FC = () => {
           </div>
         )}
       </div>
+
+      {pdfError && (
+        <div className="bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 px-3.5 py-2 rounded-xl text-xs font-medium flex items-center justify-between print:hidden">
+          <span>{pdfError}</span>
+          <button
+            type="button"
+            onClick={() => setPdfError(null)}
+            className="text-[11px] font-bold underline ml-3"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {/* Reports Grid Selector */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 print:hidden">
@@ -1430,9 +1747,15 @@ export const OvertimeReportsTab: React.FC = () => {
       {/* Report 2: Exact Screenshot-Style Daily Overtime Bill Factory Sheet */}
       {effectiveActiveReport === 2 ? (
         <div
+          ref={deptBillRef}
           id="dept-ot-bill-sheet"
-          className="bg-white text-black rounded-xl border border-slate-300 shadow-sm p-4 font-serif print:border-none print:shadow-none print:p-0"
+          className="relative bg-white text-black rounded-xl border border-slate-300 shadow-sm p-4 font-serif print:border-none print:shadow-none print:p-0"
         >
+          <div
+            data-ot-page-label="true"
+            className="hidden absolute top-2 right-3 text-[10px] font-sans font-semibold text-slate-600"
+          />
+
           {/* Centered Company & Bill Titles */}
           <div className="text-center leading-snug mb-1 text-black">
             <div className="text-[14px] font-bold tracking-tight">
@@ -1443,7 +1766,7 @@ export const OvertimeReportsTab: React.FC = () => {
             </div>
           </div>
 
-          <div className="overflow-x-auto">
+          <div data-ot-table-wrap="true" className="overflow-x-auto">
             <table className="w-full border-collapse text-[10px] text-black">
               <thead>
                 {/* Month Banner Row spanning full table width */}
@@ -1527,7 +1850,7 @@ export const OvertimeReportsTab: React.FC = () => {
                   </tr>
                 ) : (
                   deptOvertimeSheet.rows.map((row) => (
-                    <tr key={`${row.empId}-${row.sn}`}>
+                    <tr key={`${row.empId}-${row.sn}`} data-ot-row="data">
                       <td className="border border-black px-1 py-0.5 text-center">{row.sn}</td>
                       <td className="border border-black px-1.5 py-0.5 text-center font-bold whitespace-nowrap">
                         {row.empId}
@@ -1576,7 +1899,7 @@ export const OvertimeReportsTab: React.FC = () => {
                 )}
 
                 {/* Total Row */}
-                <tr className="font-bold bg-white">
+                <tr data-ot-row="total" className="font-bold bg-white">
                   <td colSpan={3} className="border border-black px-2 py-1 text-center text-[11px]">
                     Total
                   </td>
@@ -1607,25 +1930,30 @@ export const OvertimeReportsTab: React.FC = () => {
             </table>
           </div>
 
-          {/* Amount in Words */}
-          <div className="mt-1.5 pl-16 text-[11px] font-bold text-black">
-            {canViewCost
-              ? <>TK. &nbsp;{deptOvertimeSheet.amountInWords} &nbsp;Only .</>
-              : 'Financial totals restricted (View Overtime Financials permission required)'}
-          </div>
-
-          {/* Signatory Footer */}
-          <div className="mt-10 mb-2 px-16 flex items-center justify-between text-[11px] font-bold text-black">
-            <div className="flex items-center gap-36">
-              <span>Prepared By</span>
-              <span>Checked By</span>
+          <div data-ot-footer="true">
+            {/* Amount in Words */}
+            <div className="mt-1.5 pl-16 text-[11px] font-bold text-black">
+              {canViewCost
+                ? <>TK. &nbsp;{deptOvertimeSheet.amountInWords} &nbsp;Only .</>
+                : 'Financial totals restricted (View Overtime Financials permission required)'}
             </div>
-            <span>Approved BY</span>
+
+            {/* Signatory Footer */}
+            <div className="mt-10 mb-2 px-16 flex items-center justify-between text-[11px] font-bold text-black">
+              <div className="flex items-center gap-36">
+                <span>Prepared By</span>
+                <span>Checked By</span>
+              </div>
+              <span>Approved BY</span>
+            </div>
           </div>
         </div>
       ) : (
         /* Report Data Table for Reports 1, 3-7 */
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div
+          ref={genericReportRef}
+          className="relative bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden"
+        >
           <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
             <div className="flex items-center gap-2">
               <span className="font-bold text-sm text-slate-900">{activeReportDef.name}</span>
@@ -1633,10 +1961,16 @@ export const OvertimeReportsTab: React.FC = () => {
                 {currentData.length} Records
               </span>
             </div>
-            <span className="text-xs text-slate-400">Bangladesh Labor Standards Audit Compliant</span>
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-slate-400">Bangladesh Labor Standards Audit Compliant</span>
+              <span
+                data-ot-page-label="true"
+                className="hidden text-[11px] font-semibold text-slate-500"
+              />
+            </div>
           </div>
 
-          <div className="overflow-x-auto">
+          <div data-ot-table-wrap="true" className="overflow-x-auto">
             <table className="w-full text-left border-collapse text-xs">
               <thead>
                 <tr className="bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wider border-b border-slate-200">
@@ -1654,7 +1988,7 @@ export const OvertimeReportsTab: React.FC = () => {
                   </tr>
                 ) : (
                   currentData.map((row, idx) => (
-                    <tr key={idx} className="hover:bg-slate-50/80 transition-colors">
+                    <tr key={idx} data-ot-row="data" className="hover:bg-slate-50/80 transition-colors">
                       {Object.entries(row).map(([key, val], cellIdx) => (
                         <td key={cellIdx} className="py-3 px-4 whitespace-nowrap font-medium text-slate-700">
                           {typeof val === 'number' && key.includes('BDT') ? (

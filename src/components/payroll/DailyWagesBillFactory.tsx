@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
-import { Calendar, ChevronDown, Clock, Download, Filter, Printer } from 'lucide-react';
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas-pro';
+import { Calendar, ChevronDown, Clock, Download, FileText, Filter, Loader2, Printer } from 'lucide-react';
 import { useERP } from '../../context/ERPContext.tsx';
 import { formatTime12Hour } from '../../lib/geofence.ts';
 import { calculateDailyWagesShiftBreakdown } from '../../lib/dailyWagesCalculation.ts';
@@ -210,7 +212,11 @@ export const DailyWagesBillFactory: React.FC<DailyWagesBillFactoryProps> = ({
   const [isEmpTypeDropdownOpen, setIsEmpTypeDropdownOpen] = useState(false);
   const empTypeDropdownRef = useRef<HTMLDivElement>(null);
   const [genderFilter, setGenderFilter] = useState<string>('all');
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const [pdfError, setPdfError] = useState<string | null>(null);
+  const sheetRef = useRef<HTMLDivElement>(null);
   const hasUserChangedMonthRef = useRef(false);
+  const hasAutoDefaultedDeptRef = useRef(false);
 
   // Keep month synced with the Attendance Date range if user hasn't manually changed the bill month
   useEffect(() => {
@@ -278,6 +284,16 @@ export const DailyWagesBillFactory: React.FC<DailyWagesBillFactoryProps> = ({
     });
     return list;
   }, [departments, fieldForceReps]);
+
+  // Select the first department by default when opening Daily Wages Bill of Factory
+  useEffect(() => {
+    if (hasAutoDefaultedDeptRef.current) return;
+    if (availableDepartments.length === 0 || !onDepartmentFilterChange) return;
+    hasAutoDefaultedDeptRef.current = true;
+    if (!departmentFilter || normStr(departmentFilter) === 'all') {
+      onDepartmentFilterChange(availableDepartments[0]);
+    }
+  }, [availableDepartments, departmentFilter, onDepartmentFilterChange]);
 
   const availableEmploymentTypes = useMemo(
     () =>
@@ -609,6 +625,260 @@ export const DailyWagesBillFactory: React.FC<DailyWagesBillFactoryProps> = ({
     setTimeout(cleanup, 1500);
   };
 
+  const handleDownloadPdf = async () => {
+    if (!canExport || isExportingPdf) return;
+    const sheetEl = sheetRef.current;
+    if (!sheetEl) return;
+
+    setIsExportingPdf(true);
+    setPdfError(null);
+
+    const applyCompactPdfStyles = (rootEl: HTMLElement) => {
+      rootEl.style.border = 'none';
+      rootEl.style.borderRadius = '0';
+      rootEl.style.boxShadow = 'none';
+      rootEl.style.padding = '8px 10px';
+      rootEl.style.margin = '0';
+      rootEl.style.backgroundColor = '#ffffff';
+      rootEl.style.width = 'max-content';
+      rootEl.style.maxWidth = 'none';
+
+      const styleTag = rootEl.ownerDocument.createElement('style');
+      styleTag.textContent = `
+        [data-wages-pdf-root="true"] table {
+          width: auto !important;
+          border-collapse: collapse !important;
+          font-size: 9.5px !important;
+        }
+        [data-wages-pdf-root="true"] th,
+        [data-wages-pdf-root="true"] td {
+          padding: 2.5px 3px !important;
+          line-height: 1.15 !important;
+        }
+        [data-wages-pdf-root="true"] [data-wages-day-col="true"] {
+          min-width: 17px !important;
+          padding-left: 1.5px !important;
+          padding-right: 1.5px !important;
+        }
+        [data-wages-pdf-root="true"] [data-wages-sig-col="true"] {
+          min-width: 54px !important;
+        }
+        [data-wages-pdf-root="true"] [data-wages-mob-col="true"] {
+          min-width: 66px !important;
+        }
+        [data-wages-pdf-root="true"] [data-wages-footer="true"] > div:last-child {
+          margin-top: 28px !important;
+          margin-bottom: 4px !important;
+        }
+      `;
+      rootEl.setAttribute('data-wages-pdf-root', 'true');
+      rootEl.prepend(styleTag);
+
+      const wrapEl = rootEl.querySelector('[data-wages-table-wrap="true"]') as HTMLElement | null;
+      if (wrapEl) {
+        wrapEl.style.overflow = 'visible';
+        wrapEl.style.width = 'max-content';
+      }
+
+      const dayHeadersAndCells = rootEl.querySelectorAll('th, td');
+      dayHeadersAndCells.forEach((cell) => {
+        const el = cell as HTMLElement;
+        if (el.className.includes('min-w-[20px]')) {
+          el.setAttribute('data-wages-day-col', 'true');
+        } else if (el.className.includes('min-w-[72px]')) {
+          el.setAttribute('data-wages-sig-col', 'true');
+        } else if (el.className.includes('min-w-[84px]')) {
+          el.setAttribute('data-wages-mob-col', 'true');
+        }
+      });
+
+      const tableEl = rootEl.querySelector('table') as HTMLElement | null;
+      const fullTableWidth = tableEl ? Math.max(1200, Math.ceil(tableEl.scrollWidth + 24)) : 1320;
+      rootEl.style.width = `${fullTableWidth}px`;
+      return fullTableWidth;
+    };
+
+    let measureHost: HTMLDivElement | null = null;
+
+    try {
+      if (document.fonts?.ready) {
+        await document.fonts.ready;
+      }
+
+      const pdf = new jsPDF({
+        orientation: 'landscape',
+        unit: 'mm',
+        format: 'a4',
+        compress: true,
+      });
+
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const marginX = 5;
+      const marginY = 5;
+      const maxW = pageWidth - marginX * 2;
+      const maxH = pageHeight - marginY * 2;
+
+      // Measure exact rendered heights offscreen using the same compact PDF styles
+      measureHost = document.createElement('div');
+      measureHost.style.position = 'fixed';
+      measureHost.style.left = '-100000px';
+      measureHost.style.top = '0';
+      measureHost.style.width = '2400px';
+      measureHost.style.visibility = 'hidden';
+      measureHost.style.pointerEvents = 'none';
+      measureHost.style.zIndex = '-1';
+
+      const measureEl = sheetEl.cloneNode(true) as HTMLElement;
+      measureHost.appendChild(measureEl);
+      document.body.appendChild(measureHost);
+
+      const fullTableWidth = applyCompactPdfStyles(measureEl);
+      const maxPageHeightPx = Math.max(400, Math.floor(fullTableWidth * (maxH / maxW)) - 14);
+
+      const totalSheetHeight = measureEl.getBoundingClientRect().height;
+      const theadEl = measureEl.querySelector('thead') as HTMLElement | null;
+      const totalRowEl = measureEl.querySelector('[data-wages-row="total"]') as HTMLElement | null;
+      const footerEl = measureEl.querySelector('[data-wages-footer="true"]') as HTMLElement | null;
+      const workerRowEls = Array.from(measureEl.querySelectorAll('[data-wages-row="worker"]')) as HTMLElement[];
+
+      const theadHeight = theadEl ? theadEl.getBoundingClientRect().height : 44;
+      const totalRowHeight = totalRowEl ? totalRowEl.getBoundingClientRect().height : 26;
+      const footerHeight = footerEl ? footerEl.getBoundingClientRect().height + 10 : 75;
+      const workerHeights = workerRowEls.map((tr) => tr.getBoundingClientRect().height);
+      const allWorkersHeight = workerHeights.reduce((sum, h) => sum + h, 0);
+      const titleAndPaddingHeight = Math.max(
+        48,
+        totalSheetHeight - theadHeight - allWorkersHeight - totalRowHeight - footerHeight
+      );
+
+      document.body.removeChild(measureHost);
+      measureHost = null;
+
+      const baseChromeHeight = titleAndPaddingHeight + theadHeight + 8;
+      const footerChromeHeight = totalRowHeight + footerHeight;
+
+      interface PdfPageSlice {
+        start: number;
+        end: number;
+        includeFooter: boolean;
+      }
+
+      const pages: PdfPageSlice[] = [];
+      if (workerHeights.length === 0) {
+        pages.push({ start: 0, end: 0, includeFooter: true });
+      } else {
+        let startIdx = 0;
+        while (startIdx < workerHeights.length) {
+          let usedHeight = baseChromeHeight;
+          let endIdx = startIdx;
+          while (endIdx < workerHeights.length) {
+            const nextH = workerHeights[endIdx];
+            if (endIdx > startIdx && usedHeight + nextH > maxPageHeightPx) {
+              break;
+            }
+            usedHeight += nextH;
+            endIdx++;
+          }
+
+          const isFinalBatch = endIdx === workerHeights.length;
+          if (!isFinalBatch) {
+            pages.push({ start: startIdx, end: endIdx, includeFooter: false });
+            startIdx = endIdx;
+          } else {
+            if (usedHeight + footerChromeHeight <= maxPageHeightPx || endIdx - startIdx <= 1) {
+              pages.push({ start: startIdx, end: endIdx, includeFooter: true });
+            } else {
+              // Move the last few rows to the final page so Total + Signatory Footer stay paired with workers
+              const moveRows = Math.min(4, Math.max(1, endIdx - startIdx - 1));
+              const splitIdx = endIdx - moveRows;
+              pages.push({ start: startIdx, end: splitIdx, includeFooter: false });
+              pages.push({ start: splitIdx, end: endIdx, includeFooter: true });
+            }
+            break;
+          }
+        }
+      }
+
+      const totalPages = pages.length;
+
+      for (let pageIdx = 0; pageIdx < totalPages; pageIdx++) {
+        const slice = pages[pageIdx];
+
+        const canvas = await html2canvas(sheetEl, {
+          scale: 2.5,
+          useCORS: true,
+          allowTaint: true,
+          backgroundColor: '#ffffff',
+          logging: false,
+          windowWidth: 2400,
+          windowHeight: 1600,
+          onclone: (_clonedDoc, clonedEl) => {
+            const workerRows = Array.from(clonedEl.querySelectorAll('[data-wages-row="worker"]')) as HTMLElement[];
+            workerRows.forEach((tr, idx) => {
+              if (idx < slice.start || idx >= slice.end) {
+                tr.style.display = 'none';
+              }
+            });
+
+            const totalRow = clonedEl.querySelector('[data-wages-row="total"]') as HTMLElement | null;
+            if (totalRow && !slice.includeFooter) {
+              totalRow.style.display = 'none';
+            }
+
+            const clonedFooterEl = clonedEl.querySelector('[data-wages-footer="true"]') as HTMLElement | null;
+            if (clonedFooterEl && !slice.includeFooter) {
+              clonedFooterEl.style.display = 'none';
+            }
+
+            const pageLabelEl = clonedEl.querySelector('[data-wages-page-label="true"]') as HTMLElement | null;
+            if (pageLabelEl) {
+              if (totalPages > 1) {
+                pageLabelEl.textContent = `Page ${pageIdx + 1} of ${totalPages}`;
+                pageLabelEl.classList.remove('hidden');
+                pageLabelEl.style.display = 'block';
+              } else {
+                pageLabelEl.style.display = 'none';
+              }
+            }
+
+            applyCompactPdfStyles(clonedEl);
+            clonedEl.style.width = `${fullTableWidth}px`;
+          },
+        });
+
+        if (pageIdx > 0) {
+          pdf.addPage('a4', 'landscape');
+        }
+
+        const aspect = canvas.width / canvas.height;
+        let renderW = maxW;
+        let renderH = renderW / aspect;
+        if (renderH > maxH) {
+          renderH = maxH;
+          renderW = renderH * aspect;
+        }
+        const offsetX = (pageWidth - renderW) / 2;
+        const offsetY = marginY;
+        const imgData = canvas.toDataURL('image/png', 1.0);
+        pdf.addImage(imgData, 'PNG', offsetX, offsetY, renderW, renderH, undefined, 'FAST');
+      }
+
+      const safeSuffix = billTitleSuffix
+        .replace(/[^a-zA-Z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '');
+      const fileName = `Daily_Wages_Bill_Factory_${activeYearMonth}${safeSuffix ? `_${safeSuffix}` : ''}_Landscape.pdf`;
+      pdf.save(fileName);
+    } catch (err: any) {
+      setPdfError(err?.message || 'Failed to generate Landscape PDF. Please try again.');
+    } finally {
+      if (measureHost && measureHost.parentNode) {
+        measureHost.parentNode.removeChild(measureHost);
+      }
+      setIsExportingPdf(false);
+    }
+  };
+
   const handleExportExcel = () => {
     if (!canExport) return;
     const sheetRows: any[][] = [];
@@ -843,7 +1113,7 @@ export const DailyWagesBillFactory: React.FC<DailyWagesBillFactoryProps> = ({
         </div>
 
         {canExport && (
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={handlePrint}
@@ -851,6 +1121,20 @@ export const DailyWagesBillFactory: React.FC<DailyWagesBillFactoryProps> = ({
             >
               <Printer className="w-3.5 h-3.5" />
               <span>Print Report</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleDownloadPdf}
+              disabled={isExportingPdf}
+              title="Download A4 Landscape PDF"
+              className="flex items-center gap-1.5 bg-rose-600 hover:bg-rose-700 disabled:opacity-60 text-white px-3.5 py-2 rounded-xl text-xs font-bold shadow-2xs transition-colors"
+            >
+              {isExportingPdf ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <FileText className="w-3.5 h-3.5" />
+              )}
+              <span>{isExportingPdf ? 'Generating PDF...' : 'Download PDF (Landscape)'}</span>
             </button>
             <button
               type="button"
@@ -864,11 +1148,30 @@ export const DailyWagesBillFactory: React.FC<DailyWagesBillFactoryProps> = ({
         )}
       </div>
 
+      {pdfError && (
+        <div className="bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 px-3.5 py-2 rounded-xl text-xs font-medium flex items-center justify-between print:hidden">
+          <span>{pdfError}</span>
+          <button
+            type="button"
+            onClick={() => setPdfError(null)}
+            className="text-[11px] font-bold underline ml-3"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
       {/* Exact Screenshot-Style Daily Wages Bill of Factory Sheet */}
       <div
+        ref={sheetRef}
         id="daily-wages-bill-sheet"
-        className="bg-white text-black rounded-2xl border border-slate-300 shadow-2xs p-4 font-serif print:border-none print:shadow-none print:p-0"
+        className="relative bg-white text-black rounded-2xl border border-slate-300 shadow-2xs p-4 font-serif print:border-none print:shadow-none print:p-0"
       >
+        <div
+          data-wages-page-label="true"
+          className="hidden absolute top-2 right-3 text-[10px] font-sans font-semibold text-slate-600"
+        />
+
         {/* Centered Company & Bill Titles */}
         <div className="text-center leading-snug mb-1.5 text-black">
           <div className="text-[14px] font-bold tracking-tight">{companyDisplayName}</div>
@@ -880,7 +1183,7 @@ export const DailyWagesBillFactory: React.FC<DailyWagesBillFactoryProps> = ({
           </div>
         </div>
 
-        <div className="overflow-x-auto">
+        <div data-wages-table-wrap="true" className="overflow-x-auto">
           <table className="w-full border-collapse text-[10px] text-black">
             <thead>
               {/* Sub-header Row: blank cells on left/right, Weekday labels above 1..daysInMonth */}
@@ -950,7 +1253,7 @@ export const DailyWagesBillFactory: React.FC<DailyWagesBillFactoryProps> = ({
 
             <tbody>
               {wagesBillSheet.rows.length === 0 ? (
-                <tr>
+                <tr data-wages-row="empty">
                   <td
                     colSpan={totalTableCols}
                     className="border border-black py-6 text-center text-[11px] font-sans text-slate-500"
@@ -960,7 +1263,7 @@ export const DailyWagesBillFactory: React.FC<DailyWagesBillFactoryProps> = ({
                 </tr>
               ) : (
                 wagesBillSheet.rows.map((row) => (
-                  <tr key={`${row.empId}-${row.sn}`}>
+                  <tr key={`${row.empId}-${row.sn}`} data-wages-row="worker">
                     <td className="border border-black px-1 py-0.5 text-center font-sans">
                       {row.sn}
                     </td>
@@ -1042,7 +1345,7 @@ export const DailyWagesBillFactory: React.FC<DailyWagesBillFactoryProps> = ({
               )}
 
               {/* Total Row */}
-              <tr className="font-bold bg-white">
+              <tr data-wages-row="total" className="font-bold bg-white">
                 <td colSpan={3} className="border border-black px-2 py-1 text-center text-[11px]">
                   Total
                 </td>
@@ -1082,18 +1385,20 @@ export const DailyWagesBillFactory: React.FC<DailyWagesBillFactoryProps> = ({
           </table>
         </div>
 
-        {/* Amount in Words */}
-        <div className="mt-1.5 pl-16 text-[11px] font-bold text-black">
-          TK. &nbsp;{wagesBillSheet.amountInWords} &nbsp;Only .
-        </div>
-
-        {/* Signatory Footer */}
-        <div className="mt-12 mb-2 px-12 flex items-center justify-between text-[11px] font-bold text-black">
-          <div className="flex items-center gap-36">
-            <span className="border-t border-black/80 pt-0.5">Prepared By</span>
-            <span className="border-t border-black/80 pt-0.5">Checked By</span>
+        <div data-wages-footer="true">
+          {/* Amount in Words */}
+          <div className="mt-1.5 pl-16 text-[11px] font-bold text-black">
+            TK. &nbsp;{wagesBillSheet.amountInWords} &nbsp;Only .
           </div>
-          <span className="border-t border-black/80 pt-0.5">Approved BY</span>
+
+          {/* Signatory Footer */}
+          <div className="mt-12 mb-2 px-12 flex items-center justify-between text-[11px] font-bold text-black">
+            <div className="flex items-center gap-36">
+              <span className="border-t border-black/80 pt-0.5">Prepared By</span>
+              <span className="border-t border-black/80 pt-0.5">Checked By</span>
+            </div>
+            <span className="border-t border-black/80 pt-0.5">Approved BY</span>
+          </div>
         </div>
       </div>
     </div>
