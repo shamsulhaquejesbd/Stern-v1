@@ -250,6 +250,9 @@ import {
   DEFAULT_SUPABASE_URL,
   checkSupabaseConfigured,
   isSupabaseConfigured,
+  isMissingSupabaseTableError,
+  isSupabaseTableUnavailable,
+  markSupabaseTableUnavailable,
 } from '../lib/supabase.ts';
 import {
   OvertimeRequest,
@@ -3063,7 +3066,7 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Raw Materials CRUD & Supabase Sync
   const refreshRawMaterials = async () => {
     const sb = getSupabase();
-    if (sb) {
+    if (sb && !isSupabaseTableUnavailable('raw_materials')) {
       try {
         const { data, error } = await sb
           .from('raw_materials')
@@ -3104,11 +3107,15 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             localStorage.setItem('ensec_raw_materials', JSON.stringify(mapped));
           }
         } else if (error) {
-          console.warn('Supabase raw_materials fetch warning:', error.message);
+          if (!markSupabaseTableUnavailable('raw_materials', error)) {
+            console.warn('Supabase raw_materials fetch warning:', error.message);
+          }
           setRawMaterials([]);
         }
       } catch (err) {
-        console.error('Failed to load raw materials from Supabase:', err);
+        if (!isMissingSupabaseTableError(err)) {
+          console.error('Failed to load raw materials from Supabase:', err);
+        }
         setRawMaterials([]);
       }
     }
@@ -3722,7 +3729,7 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Raw Material Categories CRUD & Supabase Sync
   const refreshRawMaterialCategories = async () => {
     const sb = getSupabase();
-    if (sb) {
+    if (sb && !isSupabaseTableUnavailable('raw_material_categories')) {
       try {
         const { data, error } = await sb
           .from('raw_material_categories')
@@ -3740,10 +3747,14 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }));
           setRawMaterialCategories(mapped);
         } else if (error) {
-          console.warn('Supabase raw_material_categories fetch warning:', error.message);
+          if (!markSupabaseTableUnavailable('raw_material_categories', error)) {
+            console.warn('Supabase raw_material_categories fetch warning:', error.message);
+          }
         }
       } catch (err) {
-        console.error('Failed to load raw material categories from Supabase:', err);
+        if (!isMissingSupabaseTableError(err)) {
+          console.error('Failed to load raw material categories from Supabase:', err);
+        }
       }
     }
   };
@@ -3751,7 +3762,7 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Raw Material Classifications CRUD & Supabase Sync
   const refreshRawMaterialClassifications = async () => {
     const sb = getSupabase();
-    if (sb) {
+    if (sb && !isSupabaseTableUnavailable('raw_material_classifications')) {
       try {
         const { data, error } = await sb
           .from('raw_material_classifications')
@@ -3771,16 +3782,20 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (typeof window !== 'undefined') {
             localStorage.setItem('ensec_rm_classifications', JSON.stringify(mapped));
           }
+        } else if (error) {
+          markSupabaseTableUnavailable('raw_material_classifications', error);
         }
       } catch (err) {
-        console.warn('Supabase raw_material_classifications fetch notice:', err);
+        if (!isMissingSupabaseTableError(err)) {
+          console.warn('Supabase raw_material_classifications fetch notice:', err);
+        }
       }
     }
   };
 
   const refreshProducts = async () => {
     const sb = getSupabase();
-    if (sb) {
+    if (sb && !isSupabaseTableUnavailable('products')) {
       try {
         const { data, error } = await sb
           .from('products')
@@ -3847,17 +3862,21 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             localStorage.setItem('ensec_products', JSON.stringify(mapped));
           }
         } else if (error) {
-          console.warn('Supabase products fetch warning:', error.message);
+          if (!markSupabaseTableUnavailable('products', error)) {
+            console.warn('Supabase products fetch warning:', error.message);
+          }
         }
       } catch (err) {
-        console.error('Failed to load products from Supabase:', err);
+        if (!isMissingSupabaseTableError(err)) {
+          console.error('Failed to load products from Supabase:', err);
+        }
       }
     }
   };
 
   const refreshProductCategories = async () => {
     const sb = getSupabase();
-    if (sb) {
+    if (sb && !isSupabaseTableUnavailable('product_categories')) {
       try {
         const { data, error } = await sb
           .from('product_categories')
@@ -3878,17 +3897,21 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             localStorage.setItem('ensec_product_categories', JSON.stringify(mapped));
           }
         } else if (error) {
-          console.warn('Supabase product_categories fetch:', error.message);
+          if (!markSupabaseTableUnavailable('product_categories', error)) {
+            console.warn('Supabase product_categories fetch:', error.message);
+          }
         }
       } catch (err) {
-        console.error('Failed to load product categories from Supabase:', err);
+        if (!isMissingSupabaseTableError(err)) {
+          console.error('Failed to load product categories from Supabase:', err);
+        }
       }
     }
   };
 
   const refreshProductBrands = async () => {
     const sb = getSupabase();
-    if (sb) {
+    if (sb && !isSupabaseTableUnavailable('product_brands')) {
       try {
         const { data, error } = await sb
           .from('product_brands')
@@ -3925,11 +3948,15 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             });
           });
         } else if (error) {
-          console.warn('Supabase product_brands fetch:', error.message);
+          if (!markSupabaseTableUnavailable('product_brands', error)) {
+            console.warn('Supabase product_brands fetch:', error.message);
+          }
           setBrands([]);
         }
       } catch (err) {
-        console.error('Failed to load product brands from Supabase:', err);
+        if (!isMissingSupabaseTableError(err)) {
+          console.error('Failed to load product brands from Supabase:', err);
+        }
         setBrands([]);
       }
     }
@@ -3937,7 +3964,7 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const refreshCustomerCategories = async () => {
     const sb = getSupabase();
-    if (sb) {
+    if (sb && !isSupabaseTableUnavailable('customer_categories')) {
       try {
         const { data, error } = await sb
           .from('customer_categories')
@@ -3960,11 +3987,15 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }));
           setCustomerCategories(mapped);
         } else if (error) {
-          console.warn('Supabase customer_categories fetch:', error.message);
+          if (!markSupabaseTableUnavailable('customer_categories', error)) {
+            console.warn('Supabase customer_categories fetch:', error.message);
+          }
           setCustomerCategories([]);
         }
       } catch (err) {
-        console.error('Failed to load customer categories from Supabase:', err);
+        if (!isMissingSupabaseTableError(err)) {
+          console.error('Failed to load customer categories from Supabase:', err);
+        }
         setCustomerCategories([]);
       }
     }
@@ -3972,7 +4003,7 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const refreshDistributors = async () => {
     const sb = getSupabase();
-    if (sb) {
+    if (sb && !isSupabaseTableUnavailable('distributors')) {
       try {
         const { data, error } = await sb
           .from('distributors')
@@ -4018,17 +4049,21 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }));
           setDistributors(mapped);
         } else if (error) {
-          console.warn('Supabase distributors fetch warning:', error.message);
+          if (!markSupabaseTableUnavailable('distributors', error)) {
+            console.warn('Supabase distributors fetch warning:', error.message);
+          }
         }
       } catch (err) {
-        console.error('Failed to load distributors from Supabase:', err);
+        if (!isMissingSupabaseTableError(err)) {
+          console.error('Failed to load distributors from Supabase:', err);
+        }
       }
     }
   };
 
   const refreshCustomers = async () => {
     const sb = getSupabase();
-    if (sb) {
+    if (sb && !isSupabaseTableUnavailable('customers')) {
       try {
         const { data, error } = await sb
           .from('customers')
@@ -4063,10 +4098,14 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }));
           setCustomers(mapped);
         } else if (error) {
-          console.warn('Supabase customers fetch warning:', error.message);
+          if (!markSupabaseTableUnavailable('customers', error)) {
+            console.warn('Supabase customers fetch warning:', error.message);
+          }
         }
       } catch (err) {
-        console.error('Failed to load customers from Supabase:', err);
+        if (!isMissingSupabaseTableError(err)) {
+          console.error('Failed to load customers from Supabase:', err);
+        }
       }
     }
   };
@@ -4189,7 +4228,7 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const refreshUOMs = async () => {
     const sb = getSupabase();
-    if (sb) {
+    if (sb && !isSupabaseTableUnavailable('units_of_measurement')) {
       try {
         const { data, error } = await sb
           .from('units_of_measurement')
@@ -4215,6 +4254,7 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }));
           setUoms(mapped);
         } else if (error) {
+          markSupabaseTableUnavailable('units_of_measurement', error);
           setUoms([]);
         }
       } catch (err) {
@@ -5654,7 +5694,7 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const refreshOffers = async () => {
     const sb = getSupabase();
-    if (sb) {
+    if (sb && !isSupabaseTableUnavailable('offers_promotions')) {
       try {
         const { data, error } = await sb
           .from('offers_promotions')
@@ -5695,6 +5735,7 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }));
           setOffers(mapped);
         } else if (error) {
+          markSupabaseTableUnavailable('offers_promotions', error);
           setOffers([]);
         }
       } catch (err) {
@@ -5710,12 +5751,24 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       const [plansRes, schedulesRes, paymentsRes, assignmentsRes, followupsRes, notifsRes] =
         await Promise.all([
-          sb.from('installment_plans').select('*').order('created_at', { ascending: false }),
-          sb.from('installment_schedules').select('*').order('installment_number', { ascending: true }),
-          sb.from('installment_payments').select('*').order('created_at', { ascending: false }),
-          sb.from('collection_assignments').select('*').order('created_at', { ascending: false }),
-          sb.from('collection_followups').select('*').order('created_at', { ascending: false }),
-          sb.from('installment_notifications').select('*').order('created_at', { ascending: false }).limit(100),
+          isSupabaseTableUnavailable('installment_plans')
+            ? Promise.resolve({ data: null, error: { code: 'PGRST205', message: 'Skipped unavailable table' } })
+            : sb.from('installment_plans').select('*').order('created_at', { ascending: false }),
+          isSupabaseTableUnavailable('installment_schedules')
+            ? Promise.resolve({ data: null, error: { code: 'PGRST205', message: 'Skipped unavailable table' } })
+            : sb.from('installment_schedules').select('*').order('installment_number', { ascending: true }),
+          isSupabaseTableUnavailable('installment_payments')
+            ? Promise.resolve({ data: null, error: { code: 'PGRST205', message: 'Skipped unavailable table' } })
+            : sb.from('installment_payments').select('*').order('created_at', { ascending: false }),
+          isSupabaseTableUnavailable('collection_assignments')
+            ? Promise.resolve({ data: null, error: { code: 'PGRST205', message: 'Skipped unavailable table' } })
+            : sb.from('collection_assignments').select('*').order('created_at', { ascending: false }),
+          isSupabaseTableUnavailable('collection_followups')
+            ? Promise.resolve({ data: null, error: { code: 'PGRST205', message: 'Skipped unavailable table' } })
+            : sb.from('collection_followups').select('*').order('created_at', { ascending: false }),
+          isSupabaseTableUnavailable('installment_notifications')
+            ? Promise.resolve({ data: null, error: { code: 'PGRST205', message: 'Skipped unavailable table' } })
+            : sb.from('installment_notifications').select('*').order('created_at', { ascending: false }).limit(100),
         ]);
 
       if (!plansRes.error && Array.isArray(plansRes.data)) {
@@ -5770,7 +5823,9 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           } catch {}
         }
       } else if (plansRes.error) {
-        console.warn('Supabase refreshInstallmentData (plans) notice:', plansRes.error.message);
+        if (!markSupabaseTableUnavailable('installment_plans', plansRes.error)) {
+          console.warn('Supabase refreshInstallmentData (plans) notice:', plansRes.error.message);
+        }
       }
 
       if (!schedulesRes.error && Array.isArray(schedulesRes.data)) {
@@ -5799,7 +5854,9 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           } catch {}
         }
       } else if (schedulesRes.error) {
-        console.warn('Supabase refreshInstallmentData (schedules) notice:', schedulesRes.error.message);
+        if (!markSupabaseTableUnavailable('installment_schedules', schedulesRes.error)) {
+          console.warn('Supabase refreshInstallmentData (schedules) notice:', schedulesRes.error.message);
+        }
       }
 
       if (!paymentsRes.error && Array.isArray(paymentsRes.data)) {
@@ -5830,7 +5887,19 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           } catch {}
         }
       } else if (paymentsRes.error) {
-        console.warn('Supabase refreshInstallmentData (payments) notice:', paymentsRes.error.message);
+        if (!markSupabaseTableUnavailable('installment_payments', paymentsRes.error)) {
+          console.warn('Supabase refreshInstallmentData (payments) notice:', paymentsRes.error.message);
+        }
+      }
+
+      if (assignmentsRes.error) {
+        markSupabaseTableUnavailable('collection_assignments', assignmentsRes.error);
+      }
+      if (followupsRes.error) {
+        markSupabaseTableUnavailable('collection_followups', followupsRes.error);
+      }
+      if (notifsRes.error) {
+        markSupabaseTableUnavailable('installment_notifications', notifsRes.error);
       }
 
       if (!assignmentsRes.error && Array.isArray(assignmentsRes.data)) {
@@ -6021,7 +6090,7 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const refreshSalesOrders = async () => {
     const sb = getSupabase();
-    if (sb) {
+    if (sb && !isSupabaseTableUnavailable('sales_orders')) {
       try {
         const { data, error } = await sb
           .from('sales_orders')
@@ -6113,17 +6182,21 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
           setSalesOrders(mapped);
         } else if (error) {
-          console.warn('Supabase refreshSalesOrders notice:', error.message);
+          if (!markSupabaseTableUnavailable('sales_orders', error)) {
+            console.warn('Supabase refreshSalesOrders notice:', error.message);
+          }
         }
       } catch (err) {
-        console.warn('Supabase refreshSalesOrders error:', err);
+        if (!isMissingSupabaseTableError(err)) {
+          console.warn('Supabase refreshSalesOrders error:', err);
+        }
       }
     }
   };
 
   const refreshWarehouses = async () => {
     const sb = getSupabase();
-    if (sb) {
+    if (sb && !isSupabaseTableUnavailable('warehouses')) {
       try {
         const { data, error } = await sb
           .from('warehouses')
@@ -6156,17 +6229,21 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           // Supabase is the single source of truth - no local session memory warehouses
           setWarehouses(mapped);
         } else if (error) {
-          console.warn('Supabase refreshWarehouses notice:', error.message);
+          if (!markSupabaseTableUnavailable('warehouses', error)) {
+            console.warn('Supabase refreshWarehouses notice:', error.message);
+          }
         }
       } catch (err) {
-        console.warn('Supabase refreshWarehouses error:', err);
+        if (!isMissingSupabaseTableError(err)) {
+          console.warn('Supabase refreshWarehouses error:', err);
+        }
       }
     }
   };
 
   const refreshCIDStockReceipts = async () => {
     const sb = getSupabase();
-    if (sb) {
+    if (sb && !isSupabaseTableUnavailable('stock_cid_receipts')) {
       try {
         const { data, error } = await sb
           .from('stock_cid_receipts')
@@ -6238,17 +6315,21 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             })
           );
         } else if (error) {
-          console.warn('Supabase stock_cid_receipts fetch notice:', error.message);
+          if (!markSupabaseTableUnavailable('stock_cid_receipts', error)) {
+            console.warn('Supabase stock_cid_receipts fetch notice:', error.message);
+          }
         }
       } catch (err) {
-        console.warn('Supabase refreshCIDStockReceipts error:', err);
+        if (!isMissingSupabaseTableError(err)) {
+          console.warn('Supabase refreshCIDStockReceipts error:', err);
+        }
       }
     }
   };
 
   const refreshCRMAgreements = async () => {
     const sb = getSupabase();
-    if (sb) {
+    if (sb && !isSupabaseTableUnavailable('crm_agreements')) {
       try {
         const { data, error } = await sb
           .from('crm_agreements')
@@ -6318,9 +6399,13 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               sessionStorage.removeItem('ensec_crm_agreements');
             }
           }
+        } else if (error) {
+          markSupabaseTableUnavailable('crm_agreements', error);
         }
       } catch (err) {
-        console.warn('Supabase refreshCRMAgreements notice:', err);
+        if (!isMissingSupabaseTableError(err)) {
+          console.warn('Supabase refreshCRMAgreements notice:', err);
+        }
       }
     }
   };
@@ -6337,7 +6422,7 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const refreshStockTransfers = async () => {
     const sb = getSupabase();
-    if (sb) {
+    if (sb && !isSupabaseTableUnavailable('stock_transfers')) {
       try {
         const { data, error } = await sb
           .from('stock_transfers')
@@ -6403,17 +6488,21 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             localStorage.setItem('ensec_stock_transfers', JSON.stringify(mapped));
           }
         } else if (error) {
-          console.warn('Supabase stock_transfers fetch notice:', error.message);
+          if (!markSupabaseTableUnavailable('stock_transfers', error)) {
+            console.warn('Supabase stock_transfers fetch notice:', error.message);
+          }
         }
       } catch (err) {
-        console.warn('Supabase refreshStockTransfers error:', err);
+        if (!isMissingSupabaseTableError(err)) {
+          console.warn('Supabase refreshStockTransfers error:', err);
+        }
       }
     }
   };
 
   const refreshFinishedGoodsReceipts = async (): Promise<FinishedGoodsProductionReceipt[]> => {
     const sb = getSupabase();
-    if (sb) {
+    if (sb && !isSupabaseTableUnavailable('finished_goods_receipts')) {
       try {
         const { data, error } = await sb
           .from('finished_goods_receipts')
@@ -6453,9 +6542,13 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             } catch {}
           }
           return mapped;
+        } else if (error) {
+          markSupabaseTableUnavailable('finished_goods_receipts', error);
         }
       } catch (err) {
-        console.warn('Supabase refreshFinishedGoodsReceipts error:', err);
+        if (!isMissingSupabaseTableError(err)) {
+          console.warn('Supabase refreshFinishedGoodsReceipts error:', err);
+        }
       }
     }
     return [];
@@ -6463,29 +6556,33 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const refreshProductionOrders = async () => {
     const sb = getSupabase();
-    if (sb) {
+    if (sb && !isSupabaseTableUnavailable('production_orders')) {
       try {
-        // Auto-fix any stale production_orders in Supabase where scrap_kg was erroneously recorded as 8.5 / 8.50
-        try {
-          await sb
-            .from('production_orders')
-            .update({ scrap_kg: 0 })
-            .or('scrap_kg.eq.8.5,scrap_kg.eq.8.50');
-        } catch {}
-
         const { data, error } = await sb
           .from('production_orders')
           .select('*')
           .order('id', { ascending: false });
 
+        if (!error && Array.isArray(data) && data.some((r: any) => Number(r.scrap_kg) === 8.5)) {
+          try {
+            await sb
+              .from('production_orders')
+              .update({ scrap_kg: 0 })
+              .or('scrap_kg.eq.8.5,scrap_kg.eq.8.50');
+          } catch {}
+        }
+
         // Authoritatively query finished_goods_receipts from database to derive live FG receiving status
         let fgReceiptsData: any[] = [];
-        try {
-          const { data: fgRows, error: fgErr } = await sb
-            .from('finished_goods_receipts')
-            .select('*')
-            .order('id', { ascending: false });
-          if (!fgErr && Array.isArray(fgRows)) {
+        if (!error && !isSupabaseTableUnavailable('finished_goods_receipts')) {
+          try {
+            const { data: fgRows, error: fgErr } = await sb
+              .from('finished_goods_receipts')
+              .select('*')
+              .order('id', { ascending: false });
+            if (fgErr) {
+              markSupabaseTableUnavailable('finished_goods_receipts', fgErr);
+            } else if (Array.isArray(fgRows)) {
             fgReceiptsData = fgRows;
             const mappedFg: FinishedGoodsProductionReceipt[] = fgRows.map((row: any) => ({
               id: String(row.id),
@@ -6518,8 +6615,11 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               } catch {}
             }
           }
-        } catch (fgLoadErr) {
-          console.warn('Supabase finished_goods_receipts fetch notice:', fgLoadErr);
+          } catch (fgLoadErr) {
+            if (!isMissingSupabaseTableError(fgLoadErr)) {
+              console.warn('Supabase finished_goods_receipts fetch notice:', fgLoadErr);
+            }
+          }
         }
 
         if (!error && Array.isArray(data)) {
@@ -6653,17 +6753,21 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             return merged;
           });
         } else if (error) {
-          console.warn('Supabase production_orders fetch notice:', error.message);
+          if (!markSupabaseTableUnavailable('production_orders', error)) {
+            console.warn('Supabase production_orders fetch notice:', error.message);
+          }
         }
       } catch (err) {
-        console.warn('Supabase refreshProductionOrders error:', err);
+        if (!isMissingSupabaseTableError(err)) {
+          console.warn('Supabase refreshProductionOrders error:', err);
+        }
       }
     }
   };
 
   const refreshMaterialIssues = async () => {
     const sb = getSupabase();
-    if (!sb) return;
+    if (!sb || isSupabaseTableUnavailable('material_issues')) return;
 
     try {
       const { data, error } = await sb
@@ -6729,20 +6833,29 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (typeof window !== 'undefined') {
           localStorage.setItem('ensec_material_issues', JSON.stringify(mapped));
         }
+      } else if (error) {
+        markSupabaseTableUnavailable('material_issues', error);
       }
     } catch (err) {
-      console.warn('refreshMaterialIssues error:', err);
+      if (!isMissingSupabaseTableError(err)) {
+        console.warn('refreshMaterialIssues error:', err);
+      }
     }
   };
 
   const refreshRawMaterialReceipts = async () => {
     const sb = getSupabase();
-    if (!sb) return;
+    if (!sb || isSupabaseTableUnavailable('raw_material_receipts')) return;
     try {
       const { data: receipts, error } = await sb
         .from('raw_material_receipts')
         .select('*')
         .order('id', { ascending: false });
+
+      if (error) {
+        markSupabaseTableUnavailable('raw_material_receipts', error);
+        return;
+      }
 
       if (!error && Array.isArray(receipts) && receipts.length > 0) {
         let allItems: any[] = [];
@@ -6814,12 +6927,17 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const refreshInventoryBatches = async () => {
     const sb = getSupabase();
-    if (!sb) return;
+    if (!sb || isSupabaseTableUnavailable('inventory_batches')) return;
     try {
       const { data, error } = await sb
         .from('inventory_batches')
         .select('*')
         .order('id', { ascending: false });
+
+      if (error) {
+        markSupabaseTableUnavailable('inventory_batches', error);
+        return;
+      }
 
       if (!error && Array.isArray(data) && data.length > 0) {
         const mapped: InventoryBatch[] = data.map((b: any) => ({
@@ -6859,19 +6977,26 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
       }
     } catch (e) {
-      console.warn('refreshInventoryBatches error:', e);
+      if (!isMissingSupabaseTableError(e)) {
+        console.warn('refreshInventoryBatches error:', e);
+      }
     }
   };
 
   const refreshInventoryMovements = async () => {
     const sb = getSupabase();
-    if (!sb) return;
+    if (!sb || isSupabaseTableUnavailable('inventory_movements')) return;
     try {
       const { data, error } = await sb
         .from('inventory_movements')
         .select('*')
         .order('id', { ascending: false })
         .limit(500);
+
+      if (error) {
+        markSupabaseTableUnavailable('inventory_movements', error);
+        return;
+      }
 
       if (!error && Array.isArray(data) && data.length > 0) {
         const mapped: InventoryMovement[] = data.map((m: any) => ({
@@ -6908,18 +7033,25 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
       }
     } catch (e) {
-      console.warn('refreshInventoryMovements error:', e);
+      if (!isMissingSupabaseTableError(e)) {
+        console.warn('refreshInventoryMovements error:', e);
+      }
     }
   };
 
   const refreshProductionCosts = async () => {
     const sb = getSupabase();
-    if (!sb) return;
+    if (!sb || isSupabaseTableUnavailable('production_costs')) return;
     try {
       const { data, error } = await sb
         .from('production_costs')
         .select('*')
         .order('id', { ascending: false });
+
+      if (error) {
+        markSupabaseTableUnavailable('production_costs', error);
+        return;
+      }
 
       if (!error && Array.isArray(data) && data.length > 0) {
         const mapped: ProductionCostRecord[] = data.map((row: any) => ({
@@ -6963,18 +7095,25 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
       }
     } catch (err) {
-      console.warn('refreshProductionCosts error:', err);
+      if (!isMissingSupabaseTableError(err)) {
+        console.warn('refreshProductionCosts error:', err);
+      }
     }
   };
 
   const refreshExpenseEntries = async () => {
     const sb = getSupabase();
-    if (!sb) return;
+    if (!sb || isSupabaseTableUnavailable('expense_entries')) return;
     try {
       const { data, error } = await sb
         .from('expense_entries')
         .select('*')
         .order('date', { ascending: false });
+
+      if (error) {
+        markSupabaseTableUnavailable('expense_entries', error);
+        return;
+      }
 
       if (!error && Array.isArray(data) && data.length > 0) {
         const mapped: ExpenseEntry[] = data.map((row: any) => ({
@@ -7035,18 +7174,25 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         });
       }
     } catch (err) {
-      console.warn('refreshExpenseEntries error:', err);
+      if (!isMissingSupabaseTableError(err)) {
+        console.warn('refreshExpenseEntries error:', err);
+      }
     }
   };
 
   const refreshCostAllocations = async () => {
     const sb = getSupabase();
-    if (!sb) return;
+    if (!sb || isSupabaseTableUnavailable('production_cost_allocations')) return;
     try {
       const { data, error } = await sb
         .from('production_cost_allocations')
         .select('*')
         .order('allocation_date', { ascending: false });
+
+      if (error) {
+        markSupabaseTableUnavailable('production_cost_allocations', error);
+        return;
+      }
 
       if (!error && Array.isArray(data) && data.length > 0) {
         const mapped: CostAllocationRecord[] = data.map((row: any) => ({
@@ -7078,7 +7224,7 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           mapped.filter((a) => !isTestOrMockCostAllocation(a)).forEach((a) => {
             map.set(String(a.id), a);
           });
-          const merged = Array.from(map.values());
+          const merged = Array.from(new Set(map.values()));
           if (typeof window !== 'undefined') {
             if (merged.length > 0) {
               localStorage.setItem('ensec_cost_allocations', JSON.stringify(merged));
@@ -7091,7 +7237,9 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         });
       }
     } catch (err) {
-      console.warn('refreshCostAllocations error:', err);
+      if (!isMissingSupabaseTableError(err)) {
+        console.warn('refreshCostAllocations error:', err);
+      }
     }
   };
 
@@ -7470,6 +7618,8 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     let officeChannel: any = null;
     let insPlanChannel: any = null;
     let insSchedChannel: any = null;
+    let salaryStrChannel: any = null;
+    let fieldForceChannel: any = null;
 
     if (sb && typeof sb.channel === 'function') {
       try {
@@ -7726,6 +7876,28 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             }
           )
           .subscribe();
+
+        salaryStrChannel = sb
+          .channel('realtime:employee_salary_structures')
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'employee_salary_structures' },
+            () => {
+              void refreshSalaryStructures();
+            }
+          )
+          .subscribe();
+
+        fieldForceChannel = sb
+          .channel('realtime:field_force_reps')
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'field_force_reps' },
+            () => {
+              void refreshFieldForce();
+            }
+          )
+          .subscribe();
       } catch (err) {
         console.warn('Supabase Realtime subscription notice:', err);
       }
@@ -7770,6 +7942,12 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
         if (insSchedChannel && sb && typeof sb.removeChannel === 'function') {
           sb.removeChannel(insSchedChannel);
+        }
+        if (salaryStrChannel && sb && typeof sb.removeChannel === 'function') {
+          sb.removeChannel(salaryStrChannel);
+        }
+        if (fieldForceChannel && sb && typeof sb.removeChannel === 'function') {
+          sb.removeChannel(fieldForceChannel);
         }
       };
     }
@@ -13620,13 +13798,18 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const refreshBOMs = async () => {
     const sb = getSupabase();
-    if (!sb) return;
+    if (!sb || isSupabaseTableUnavailable('bill_of_materials')) return;
 
     try {
       const { data, error } = await sb
         .from('bill_of_materials')
         .select('*')
         .order('id', { ascending: false });
+
+      if (error) {
+        markSupabaseTableUnavailable('bill_of_materials', error);
+        return;
+      }
 
       if (!error && Array.isArray(data) && data.length > 0) {
         let lineItems: any[] = [];

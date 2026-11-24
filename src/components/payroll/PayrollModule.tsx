@@ -133,10 +133,12 @@ export const PayrollModule: React.FC<PayrollModuleProps> = ({
     systemSettings,
     users,
     fieldForceReps,
+    refreshFieldForce,
     departments,
     officeLocations,
     salaryStructures,
     salaryStructuresDbStatus,
+    refreshSalaryStructures,
     syncSalaryStructuresToSupabase,
     attendanceRecords,
     attendanceDbStatus,
@@ -242,6 +244,15 @@ export const PayrollModule: React.FC<PayrollModuleProps> = ({
       setActiveTab(firstPermittedTab);
     }
   }, [initialRouteTab, hasExplicitTabRequest, firstPermittedTab, payrollPagePerms, activeTab]);
+
+  useEffect(() => {
+    if (!isUnknownExplicitTab && activeTab === 'salary_structure' && payrollPagePerms.salary_structure) {
+      void Promise.allSettled([
+        refreshFieldForce?.(),
+        refreshSalaryStructures(),
+      ]);
+    }
+  }, [activeTab, isUnknownExplicitTab, payrollPagePerms.salary_structure]);
 
   const handleSelectTab = (tab: PayrollTab) => {
     if (!payrollPagePerms[tab]) return;
@@ -357,6 +368,7 @@ export const PayrollModule: React.FC<PayrollModuleProps> = ({
   const [selectedEmployeeForStructure, setSelectedEmployeeForStructure] = useState<FieldForceRep | null>(null);
   const [isSavingStructure, setIsSavingStructure] = useState<boolean>(false);
   const [isSyncingStructures, setIsSyncingStructures] = useState<boolean>(false);
+  const [isRefreshingStructures, setIsRefreshingStructures] = useState<boolean>(false);
   const [copiedStructureSql, setCopiedStructureSql] = useState<boolean>(false);
   const [structureFeedback, setStructureFeedback] = useState<{
     type: 'success' | 'warning' | 'error';
@@ -1779,6 +1791,35 @@ export const PayrollModule: React.FC<PayrollModuleProps> = ({
                       : 'Supabase Sync Needed'}
                   </span>
                 ) : null}
+                <button
+                  type="button"
+                  disabled={isRefreshingStructures}
+                  onClick={async () => {
+                    setIsRefreshingStructures(true);
+                    setStructureFeedback(null);
+                    try {
+                      await Promise.all([
+                        refreshFieldForce?.(),
+                        refreshSalaryStructures(),
+                      ]);
+                      setStructureFeedback({
+                        type: 'success',
+                        message: 'Salary structures refreshed from Supabase.',
+                      });
+                    } catch (err: any) {
+                      setStructureFeedback({
+                        type: 'error',
+                        message: err?.message || 'Failed to refresh salary structures from Supabase.',
+                      });
+                    } finally {
+                      setIsRefreshingStructures(false);
+                    }
+                  }}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-[11px] font-semibold transition-colors disabled:opacity-50"
+                >
+                  <RotateCcw className={`w-3 h-3 ${isRefreshingStructures ? 'animate-spin' : ''}`} />
+                  <span>{isRefreshingStructures ? 'Refreshing...' : 'Refresh'}</span>
+                </button>
                 {canEditSalaryStructure && (
                   <button
                     type="button"

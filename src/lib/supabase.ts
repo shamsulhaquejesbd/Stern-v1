@@ -67,6 +67,31 @@ export const getSupabaseAnonKey = (): string => {
 let cachedClient: SupabaseClient | null = null;
 let lastUrl = '';
 let lastKey = '';
+const unavailableTables = new Set<string>();
+
+export const isMissingSupabaseTableError = (err: any): boolean => {
+  if (!err) return false;
+  const code = String(err.code || '').trim();
+  const msg = String(err.message || err || '').toLowerCase();
+  return (
+    code === 'PGRST205' ||
+    code === '42P01' ||
+    msg.includes('could not find the table') ||
+    (msg.includes('relation') && msg.includes('does not exist'))
+  );
+};
+
+export const isSupabaseTableUnavailable = (tableName: string): boolean => {
+  return unavailableTables.has(tableName);
+};
+
+export const markSupabaseTableUnavailable = (tableName: string, err?: any): boolean => {
+  if (err && !isMissingSupabaseTableError(err)) {
+    return false;
+  }
+  unavailableTables.add(tableName);
+  return true;
+};
 
 export const getSupabase = (): SupabaseClient | null => {
   const url = getSupabaseUrl();
@@ -120,6 +145,7 @@ export const saveSupabaseConfig = (url: string, anonKey: string) => {
     localStorage.removeItem('ensec_products');
     localStorage.removeItem('ensec_product_brands');
     cachedClient = null;
+    unavailableTables.clear();
     window.dispatchEvent(new Event('ensec-supabase-config-changed'));
   }
 };
@@ -133,6 +159,7 @@ export const clearSupabaseConfig = () => {
     localStorage.removeItem('ensec_products');
     localStorage.removeItem('ensec_product_brands');
     cachedClient = null;
+    unavailableTables.clear();
     window.dispatchEvent(new Event('ensec-supabase-config-changed'));
   }
 };
